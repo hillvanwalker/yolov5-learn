@@ -39,12 +39,15 @@ class Conv(nn.Module):
         super().__init__()
         self.conv = nn.Conv2d(c1, c2, k, s, autopad(k, p), groups=g, bias=False)
         self.bn = nn.BatchNorm2d(c2)
+        # utils/activations.py
+        # SiLU, Hardswish, Mish, MemoryEfficientMish, FReLU, AconC, MetaAconC
         self.act = nn.SiLU() if act is True else (act if isinstance(act, nn.Module) else nn.Identity())
 
     def forward(self, x):
         return self.act(self.bn(self.conv(x)))
 
     def forward_fuse(self, x):
+        # 用于将conv与bn融合加速推理
         return self.act(self.conv(x))
 
 
@@ -457,6 +460,7 @@ class Detections:
 
 
 class Classify(nn.Module):
+    # 二级分类
     # Classification head, i.e. x(b,c1,20,20) to x(b,c2)
     def __init__(self, c1, c2, k=1, s=1, p=None, g=1):  # ch_in, ch_out, kernel, stride, padding, groups
         super().__init__()

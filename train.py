@@ -519,7 +519,7 @@ def main(opt, callbacks=Callbacks()):
             LOGGER.info('Destroying process group... ')
             dist.destroy_process_group()
 
-    # Evolve hyperparameters (optional)
+    # Evolve hyperparameters (optional) 遗传进化超参数
     else:
         # Hyperparameter evolution metadata (mutation scale 0-1, lower_limit, upper_limit)
         meta = {'lr0': (1, 1e-5, 1e-1),  # initial learning rate (SGD=1E-2, Adam=1E-3)
