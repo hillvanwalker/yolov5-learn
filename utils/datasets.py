@@ -121,6 +121,7 @@ def create_dataloader(path, imgsz, batch_size, stride, single_cls=False, hyp=Non
     return dataloader, dataset
 
 
+# 当image_weights=False时就会调用进行自定义DataLoader
 class InfiniteDataLoader(torch.utils.data.dataloader.DataLoader):
     """ Dataloader that reuses workers
 
@@ -156,6 +157,7 @@ class _RepeatSampler(object):
 
 
 class LoadImages:
+    # 用于推理时加载数据
     # YOLOv5 image/video dataloader, i.e. `python detect.py --source image.jpg/vid.mp4`
     def __init__(self, path, img_size=640, stride=32, auto=True):
         p = str(Path(path).resolve())  # os-agnostic absolute path
@@ -382,6 +384,7 @@ class LoadImagesAndLabels(Dataset):
         self.img_size = img_size
         self.augment = augment
         self.hyp = hyp
+        # image_weights图片按类别频率加权采样, 默认False: 不作类别区分
         self.image_weights = image_weights
         self.rect = False if image_weights else rect
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
@@ -415,6 +418,7 @@ class LoadImagesAndLabels(Dataset):
         self.label_files = img2label_paths(self.img_files)  # labels
         cache_path = (p if p.is_file() else Path(self.label_files[0]).parent).with_suffix('.cache')
         try:
+            # 版本信息或hash值对不上, 说明本地数据发生变化, 需要重新cache
             cache, exists = np.load(cache_path, allow_pickle=True).item(), True  # load dict
             assert cache['version'] == self.cache_version  # same version
             assert cache['hash'] == get_hash(self.label_files + self.img_files)  # same hash
@@ -431,6 +435,7 @@ class LoadImagesAndLabels(Dataset):
         assert nf > 0 or not augment, f'{prefix}No labels in {cache_path}. Can not train without labels. See {HELP_URL}'
 
         # Read cache
+        # cache[img_file]=[l, shape, segments] cache[hash] cache[results] cache[msg] cache[version]
         [cache.pop(k) for k in ('hash', 'version', 'msgs')]  # remove items
         labels, shapes, self.segments = zip(*cache.values())
         self.labels = list(labels)
@@ -503,10 +508,10 @@ class LoadImagesAndLabels(Dataset):
             pbar = tqdm(pool.imap(verify_image_label, zip(self.img_files, self.label_files, repeat(prefix))),
                         desc=desc, total=len(self.img_files))
             for im_file, l, shape, segments, nm_f, nf_f, ne_f, nc_f, msg in pbar:
-                nm += nm_f
-                nf += nf_f
-                ne += ne_f
-                nc += nc_f
+                nm += nm_f  # number missing
+                nf += nf_f  # number found
+                ne += ne_f  # number empty
+                nc += nc_f  # number corrupt
                 if im_file:
                     x[im_file] = [l, shape, segments]
                 if msg:
@@ -613,13 +618,21 @@ class LoadImagesAndLabels(Dataset):
 
     @staticmethod
     def collate_fn(batch):
+        # 目标检测中需要重写collate_fn函数
         img, label, path, shapes = zip(*batch)  # transposed
         for i, l in enumerate(label):
             l[:, 0] = i  # add target image index for build_targets()
+            # index 0,0,1,2,是标签对应索引的图片
+            # [[0, 6, 0.5, 0.5, 0.26, 0.35],
+            #  [0, 6, 0.5, 0.5, 0.26, 0.35],
+            #  [1, 6, 0.5, 0.5, 0.26, 0.35],
+            #  [2, 6, 0.5, 0.5, 0.26, 0.35],]
+        # return 图片\标签\路径\shapes(h0, w0), ((h / h0, w / w0), pad)
         return torch.stack(img, 0), torch.cat(label, 0), path, shapes
 
     @staticmethod
     def collate_fn4(batch):
+        # 将4张mosaic图片[1, 3, 640, 640]合成一张大的mosaic图片[1, 3, 1280, 1280]
         img, label, path, shapes = zip(*batch)  # transposed
         n = len(shapes) // 4
         img4, label4, path4, shapes4 = [], [], path[:n], shapes[:n]

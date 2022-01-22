@@ -89,7 +89,7 @@ class QFocalLoss(nn.Module):
 
 
 class ComputeLoss:
-    # Compute losses
+    # Compute losses, https://blog.csdn.net/qq_38253797/article/details/119444854
     def __init__(self, model, autobalance=False):
         self.sort_obj_iou = False
         device = next(model.parameters()).device  # get model device

@@ -27,7 +27,9 @@ except ImportError:
 
 LOGGER = logging.getLogger(__name__)
 
-
+# 多进程并行运算
+# 主进程实现数据的预读取并缓存，然后其它子进程则从缓存中读取数据并进行一系列运算
+# 基于torch.distributed.barrier()函数实现了上下文管理器torch_distributed_zero_first
 @contextmanager
 def torch_distributed_zero_first(local_rank: int):
     """

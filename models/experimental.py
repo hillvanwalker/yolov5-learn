@@ -26,7 +26,7 @@ class CrossConv(nn.Module):
 
 
 class Sum(nn.Module):
-    # Weighted sum of 2 or more layers https://arxiv.org/abs/1911.09070
+    # Weighted sum of 2 or more layers https://arxiv.org/abs/1911.09070, efficientdet
     def __init__(self, n, weight=False):  # n: number of inputs
         super().__init__()
         self.weight = weight  # apply weights boolean

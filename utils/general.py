@@ -463,6 +463,7 @@ def colorstr(*input):
 
 def labels_to_class_weights(labels, nc=80):
     # Get class weights (inverse frequency) from training labels
+    # 数据集中所有类别的权重（频率大的权重小）
     if labels[0] is None:  # no labels loaded
         return torch.Tensor()
 
@@ -611,7 +612,7 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
     Returns:
          list of detections, on (n,6) tensor per image [xyxy, conf, cls]
     """
-
+    # prediction: [batch, num_anchors(3), (x+y+w+h+1+num_classes)], 预测结果总和
     nc = prediction.shape[2] - 5  # number of classes
     xc = prediction[..., 4] > conf_thres  # candidates
 
@@ -631,10 +632,10 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
     output = [torch.zeros((0, 6), device=prediction.device)] * prediction.shape[0]
     for xi, x in enumerate(prediction):  # image index, image inference
         # Apply constraints
-        # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # width-height
-        x = x[xc[xi]]  # confidence
+        # x[((x[..., 2:4] < min_wh) | (x[..., 2:4] > max_wh)).any(1), 4] = 0  # 过滤掉大小不符的目标, width-height
+        x = x[xc[xi]]  # 过滤掉confidence极低的目标
 
-        # Cat apriori labels if autolabelling
+        # Cat apriori labels if autolabelling 自动标注label时调用  一般不用
         if labels and len(labels[xi]):
             l = labels[xi]
             v = torch.zeros((len(l), nc + 5), device=x.device)
@@ -643,7 +644,7 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
             v[range(len(l)), l[:, 0].long() + 5] = 1.0  # cls
             x = torch.cat((x, v), 0)
 
-        # If none remain process next image
+        # 若此时没有目标,则继续下一轮, If none remain process next image
         if not x.shape[0]:
             continue
 
@@ -654,11 +655,16 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
         box = xywh2xyxy(x[:, :4])
 
         # Detections matrix nx6 (xyxy, conf, cls)
-        if multi_label:
+        # 针对每个类别score(obj_conf * cls_conf) > conf_thres进行再次过滤
+        if multi_label: # 每个anchor存在多个类别
+            # nonzero获得矩阵中的非0(True)数据的下标, .T将矩阵拆开
             i, j = (x[:, 5:] > conf_thres).nonzero(as_tuple=False).T
+            # box[i]: [num,4] xyxy
             x = torch.cat((box[i], x[i, j + 5, None], j[:, None].float()), 1)
-        else:  # best class only
+        else:  # 每个anchor采用一个类别, best class only
+            #每个anchor中，置信度最大的一个类别以及其索引
             conf, j = x[:, 5:].max(1, keepdim=True)
+            # 将box,conf,j拼到一起，作为输出,这里通过[conf.view(-1) > conf_thres]又进行了一次筛选
             x = torch.cat((box, conf, j.float()), 1)[conf.view(-1) > conf_thres]
 
         # Filter by class
@@ -678,6 +684,8 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
 
         # Batched NMS
         c = x[:, 5:6] * (0 if agnostic else max_wh)  # classes
+        # 做个切片 得到boxes和scores   不同类别的box位置信息加上一个很大的数但又不同的数c
+        # 这样作非极大抑制的时候不同类别的框就不会掺和到一块了  这是一个作nms挺巧妙的技巧
         boxes, scores = x[:, :4] + c, x[:, 4]  # boxes (offset by class), scores
         i = torchvision.ops.nms(boxes, scores, iou_thres)  # NMS
         if i.shape[0] > max_det:  # limit detections
@@ -699,6 +707,7 @@ def non_max_suppression(prediction, conf_thres=0.25, iou_thres=0.45, classes=Non
 
 
 def strip_optimizer(f='best.pt', s=''):  # from utils.general import *; strip_optimizer()
+    # 在模型训练完后, 将optimizer、training_results、updates…从保存的模型文件ckpt中删除
     # Strip optimizer from 'f' to finalize training, optionally save as 's'
     x = torch.load(f, map_location=torch.device('cpu'))
     if x.get('ema'):
@@ -715,6 +724,7 @@ def strip_optimizer(f='best.pt', s=''):  # from utils.general import *; strip_op
 
 
 def print_mutation(results, hyp, save_dir, bucket):
+    # 打印进化后的超参结果
     evolve_csv, results_csv, evolve_yaml = save_dir / 'evolve.csv', save_dir / 'results.csv', save_dir / 'hyp_evolve.yaml'
     keys = ('metrics/precision', 'metrics/recall', 'metrics/mAP_0.5', 'metrics/mAP_0.5:0.95',
             'val/box_loss', 'val/obj_loss', 'val/cls_loss') + tuple(hyp.keys())  # [results + hyps]
@@ -790,6 +800,7 @@ def apply_classifier(x, model, img, im0):
 
 def save_one_box(xyxy, im, file='image.jpg', gain=1.02, pad=10, square=False, BGR=False, save=True):
     # Save image crop as {file} with crop size multiple {gain} and {pad} pixels. Save and/or return crop
+    # 将预测到的目标从原图中扣出来 剪切好 并保存 会在runs/detect/exp下生成crops文件
     xyxy = torch.tensor(xyxy).view(-1, 4)
     b = xyxy2xywh(xyxy)  # boxes
     if square:
